@@ -24,9 +24,7 @@ async fn main() {
     .route("/", get(root))
     .route("/keypair", post(generate_keypair))
     .route("/token/create", post(create_token))
-    .route("/token/mint", post(mint_token))
-    .route("/message/sign", post(sign_message));
-
+    .route("/token/mint", post(mint_token));  
 
 
     
@@ -188,45 +186,6 @@ async fn mint_token(Json(body): Json<MintTokenRequest>) -> impl IntoResponse {
             program_id: instruction.program_id.to_string(),
             accounts,
             instruction_data: encoded_data,
-        },
-    };
-
-    (StatusCode::OK, Json(response)).into_response()
-}
-#[derive(Deserialize)]
-struct SignMessageRequest {
-    message: String,
-    secret: String,
-}
-
-#[derive(Serialize)]
-struct SignMessageResponse {
-    signature: String,
-    public_key: String,
-    message: String,
-}
-
-async fn sign_message(Json(body): Json<SignMessageRequest>) -> impl IntoResponse {
-    // Decode secret key
-    let secret_bytes = match bs58::decode(&body.secret).into_vec() {
-        Ok(bytes) if bytes.len() == 64 => bytes,
-        Ok(_) => return (StatusCode::BAD_REQUEST, Json(error("Secret must be 64 bytes in base58"))).into_response(),
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(error("Invalid base58 in secret"))).into_response(),
-    };
-
-    let keypair = match Keypair::from_bytes(&secret_bytes) {
-        Ok(kp) => kp,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(error("Failed to parse keypair from secret"))).into_response(),
-    };
-
-    let signature = keypair.sign_message(body.message.as_bytes());
-
-    let response = SuccessResponse {
-        success: true,
-        data: SignMessageResponse {
-            signature: base64::encode(signature.as_ref()),
-            public_key: keypair.pubkey().to_string(),
-            message: body.message,
         },
     };
 
