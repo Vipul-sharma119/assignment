@@ -25,7 +25,9 @@ async fn main() {
     .route("/keypair", post(generate_keypair))
     .route("/token/create", post(create_token))
     .route("/token/mint", post(mint_token))
-    .route("/message/sign", post(sign_message));
+    .route("/message/sign", post(sign_message))
+    .route("/message/verify", post(verify_message));
+
 
 
 
@@ -45,7 +47,7 @@ async fn main() {
 
 
 async fn root() -> &'static str {
-    "\nUse POST /keypair or POST /token/create."
+    "\nUse POST /keypair or POST /token/create or POST /token/mint or POST /message/sign or POST /message/verify\n"
 }
 
 #[derive(Serialize)]
@@ -89,6 +91,8 @@ struct CreateTokenResponse {
     accounts: Vec<AccountMetaInfo>,
     instruction_data: String,
 }
+
+// Create a new SPL Token mint
 
 async fn create_token(Json(body): Json<CreateTokenRequest>) -> impl IntoResponse {
     let mint_authority = match decode_pubkey(&body.mintAuthority) {
@@ -143,6 +147,7 @@ struct MintTokenRequest {
     amount: u64,
 }
 
+ // Mint an SPL Token
 async fn mint_token(Json(body): Json<MintTokenRequest>) -> impl IntoResponse {
     let mint = match decode_pubkey(&body.mint) {
         Ok(pk) => pk,
@@ -206,8 +211,9 @@ struct SignMessageResponse {
     message: String,
 }
 
+// Sign a message 
 async fn sign_message(Json(body): Json<SignMessageRequest>) -> impl IntoResponse {
-    // Decode secret key
+    
     let secret_bytes = match bs58::decode(&body.secret).into_vec() {
         Ok(bytes) if bytes.len() == 64 => bytes,
         Ok(_) => return (StatusCode::BAD_REQUEST, Json(error("Secret must be 64 bytes in base58"))).into_response(),
@@ -227,6 +233,60 @@ async fn sign_message(Json(body): Json<SignMessageRequest>) -> impl IntoResponse
             signature: base64::encode(signature.as_ref()),
             public_key: keypair.pubkey().to_string(),
             message: body.message,
+        },
+    };
+
+    (StatusCode::OK, Json(response)).into_response()
+}
+
+#[derive(Deserialize)]
+struct VerifyMessageRequest {
+    message: String,
+    signature: String,
+    pubkey: String,
+}
+
+#[derive(Serialize)]
+struct VerifyMessageResponse {
+    valid: bool,
+    message: String,
+    pubkey: String,
+}
+
+// Verify a message signature
+
+async fn verify_message(Json(body): Json<VerifyMessageRequest>) -> impl IntoResponse {
+
+    let sig_bytes = match base64::decode(&body.signature) {
+        Ok(bytes) if bytes.len() == 64 => bytes,
+        Ok(_) => return (StatusCode::BAD_REQUEST, Json(error("Signature must be 64 bytes in base64"))).into_response(),
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(error("Invalid base64 in signature"))).into_response(),
+    };
+
+    let pubkey_bytes = match bs58::decode(&body.pubkey).into_vec() {
+        Ok(bytes) if bytes.len() == 32 => bytes,
+        Ok(_) => return (StatusCode::BAD_REQUEST, Json(error("Pubkey must be 32 bytes in base58"))).into_response(),
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(error("Invalid base58 in pubkey"))).into_response(),
+    };
+
+    let pubkey = match Pubkey::try_from(pubkey_bytes.as_slice()) {
+        Ok(pk) => pk,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(error("Invalid pubkey bytes"))).into_response(),
+    };
+
+    let signature = match solana_sdk::signature::Signature::try_from(sig_bytes.as_slice()) {
+        Ok(sig) => sig,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(error("Invalid signature format"))).into_response(),
+    };
+
+    let is_valid = signature.verify(pubkey.as_ref(), body.message.as_bytes());
+
+    let response = SuccessResponse {
+        success: true,
+        data: VerifyMessageResponse {
+            valid: is_valid,
+            message: body.message,
+            pubkey: pubkey.to_string(),
         },
     };
 
