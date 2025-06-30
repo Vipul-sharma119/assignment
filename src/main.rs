@@ -9,6 +9,7 @@ use solana_sdk::signature::{Keypair, Signer};
 use std::net::SocketAddr;
 use bs58;
 use axum::Server;
+use std::env;
 
 #[derive(Serialize)]
 struct SuccessResponse<T> {
@@ -46,7 +47,12 @@ async fn generate_keypair() -> impl IntoResponse {
 async fn main() {
     let app = Router::new().route("/keypair", post(generate_keypair));
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    // Use PORT env variable or default to 3000
+    let port = env::var("PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3000);
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     println!("Listening on http://{}", addr);
 
     Server::bind(&addr)
