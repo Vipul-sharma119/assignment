@@ -26,8 +26,6 @@ async fn main() {
     .route("/token/create", post(create_token))
     .route("/token/mint", post(mint_token))
     .route("/message/sign", post(sign_message));
-    
-
 
 
 
@@ -234,7 +232,6 @@ async fn sign_message(Json(body): Json<SignMessageRequest>) -> impl IntoResponse
 
     (StatusCode::OK, Json(response)).into_response()
 }
-
 
 
 fn decode_pubkey(s: &str) -> Result<Pubkey, String> {
