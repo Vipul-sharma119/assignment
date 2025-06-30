@@ -20,12 +20,14 @@ use axum::Server;
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new()
-        .route("/", get(root))
-        .route("/keypair", post(generate_keypair))
-        .route("/token/create", post(create_token));
+   let app = Router::new()
+    .route("/", get(root))
+    .route("/keypair", post(generate_keypair))
+    .route("/token/create", post(create_token))
+    .route("/token/mint", post(mint_token));  
 
-    // Use PORT env variable if set, otherwise default to 3000
+
+    
     let port = env::var("PORT")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -39,13 +41,11 @@ async fn main() {
         .unwrap();
 }
 
-// ====================== / ======================
-// GET /
+
 async fn root() -> &'static str {
-    "✅ Solana Axum server is running.\nUse POST /keypair or POST /token/create."
+    "\nUse POST /keypair or POST /token/create."
 }
 
-// ====================== /keypair ======================
 #[derive(Serialize)]
 struct KeypairResponse {
     pubkey: String,
@@ -66,7 +66,7 @@ async fn generate_keypair() -> impl IntoResponse {
     (StatusCode::OK, Json(response))
 }
 
-// ====================== /token/create ======================
+
 #[derive(Deserialize)]
 struct CreateTokenRequest {
     mintAuthority: String,
@@ -133,8 +133,66 @@ async fn create_token(Json(body): Json<CreateTokenRequest>) -> impl IntoResponse
     (StatusCode::OK, Json(response)).into_response()
 }
 
+#[derive(Deserialize)]
+struct MintTokenRequest {
+    mint: String,
+    destination: String,
+    authority: String,
+    amount: u64,
+}
 
-// ====================== Helpers ======================
+async fn mint_token(Json(body): Json<MintTokenRequest>) -> impl IntoResponse {
+    let mint = match decode_pubkey(&body.mint) {
+        Ok(pk) => pk,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(error(&e))).into_response(),
+    };
+
+    let destination = match decode_pubkey(&body.destination) {
+        Ok(pk) => pk,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(error(&e))).into_response(),
+    };
+
+    let authority = match decode_pubkey(&body.authority) {
+        Ok(pk) => pk,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(error(&e))).into_response(),
+    };
+
+    let instruction = match spl_token::instruction::mint_to(
+        &spl_token::ID,
+        &mint,
+        &destination,
+        &authority,
+        &[], 
+        body.amount,
+    ) {
+        Ok(instr) => instr,
+        Err(e) => return (
+            StatusCode::BAD_REQUEST,
+            Json(error(&format!("Instruction creation failed: {e}")))
+        ).into_response(),
+    };
+
+    let accounts: Vec<AccountMetaInfo> = instruction.accounts.into_iter().map(|acct| AccountMetaInfo {
+        pubkey: acct.pubkey.to_string(),
+        is_signer: acct.is_signer,
+        is_writable: acct.is_writable,
+    }).collect();
+
+    let encoded_data = base64::encode(instruction.data);
+
+    let response = SuccessResponse {
+        success: true,
+        data: CreateTokenResponse {
+            program_id: instruction.program_id.to_string(),
+            accounts,
+            instruction_data: encoded_data,
+        },
+    };
+
+    (StatusCode::OK, Json(response)).into_response()
+}
+
+
 fn decode_pubkey(s: &str) -> Result<Pubkey, String> {
     bs58::decode(s)
         .into_vec()
